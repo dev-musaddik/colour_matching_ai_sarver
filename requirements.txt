@@ -1,12 +1,18 @@
-# fastapi
-# uvicorn[standard]
-# python-multipart
-# numpy
-# opencv-python-headless
-# scikit-learn==1.7.2
-# Pillow
-# ultralytics
-# aqlite
+fastapi
+
+uvicorn[standard]
+
+python-multipart
+
+numpy
+
+opencv-python-headless
+
+scikit-learn==1.7.2
+
+Pillow
+
+aqlite
 
 fastapi
 uvicorn[standard]
@@ -15,4 +21,4 @@ numpy
 opencv-python-headless
 scikit-learn==1.7.2
 Pillow
-ultralytics==8.1.0
+aqlite

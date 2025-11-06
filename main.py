@@ -13,6 +13,7 @@ app = FastAPI(title="Color Analyzer API")
 origins = [
     "http://localhost:3000",
     "http://localhost:5173",  # Vite default port
+    "https://hair-color-analyzer-frontend.vercel.app"
     # Add your frontend production URL here
 ]
 

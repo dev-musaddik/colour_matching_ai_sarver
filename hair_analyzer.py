@@ -2,71 +2,55 @@ import io
 import numpy as np
 from PIL import Image
 from sklearn.cluster import KMeans
+from ultralytics import YOLO
+import cv2
 
 # ----------------------------
-# Predefined Colors
+# Load the YOLO model
 # ----------------------------
-# PREDEFINED_COLORS = {
-#     "#1": "#252628",
-#     "Brown": "#A52A2A",
-#     "Blonde": "#FAFAD2",
-#     "Red": "#FF0000",
-#     "Gray": "#808080",
-#     "White": "#FFFFFF",
-#     "Dark Brown": "#654321",
-#     "Light Brown": "#C4A484",
-#     "Golden Blonde": "#F0E68C",
-#     "Ash Blonde": "#B2BEB5",
-#     "Strawberry Blonde": "#FF9999",
-#     "Auburn": "#A52A2A",
-#     "Chestnut": "#954535",
-#     "Honey": "#FFB347",
-#     "Platinum": "#E5E4E2",
-#     "Silver": "#C0C0C0",
-#     "Jet Black": "#0A0A0A",
-#     "Chocolate Brown": "#7B3F00",
-#     "Caramel": "#FFD700",
-#     "Dirty Blonde": "#C6B895",
-#     "Ginger": "#B06500",
-#     "Burgundy": "#800020",
-#     "Mahogany": "#C04000",
-#     "Copper": "#B87333",
-#     "Titian": "#D2691E",
-#     "Venetian Blonde": "#F7DCB4",
-#     "Ash Brown": "#A9A9A9",
-#     "Sandy Blonde": "#F4A460",
-#     "Dark Blonde": "#9B870C"
-# }
-PREDEFINED_COLORS = {
-    "#2BT8A": "#b69a7b",
-    "#613L_18A": "#cfbfaa",
-    "#6_27": "#675443",
-    "#4C_27": "#65594b",
-    "#4B_27": "#b19166",
-    "#2BT6": "#92755a",
-    "#2CT5": "#826146",
-    "#13A_24": "#d0c3ae",
-    "#64": "#dacec1",
-    "#62": "#e3d8c0",
-    "#60A": "#dfd7c5",
-    "#50": "#c4c8ca",
-    "#30A": "#754b3d",
-    "#27": "#d7c4a2",
-    "#13A": "#cdb398",
-    "#10A": "#a68560",
-    "#8A": "#967d62",
-    "#5A": "#755539",
-    "#4C": "#5c463f",
-    "#4B": "#845b38",
-    "#3A": "#76523b",
-    "#2C": "#675141",
-    "#2B": "#40332e",
-    "#1C": "#2f2f2f",
-    "#1B": "#252628",
-    "#1": "#252628"
-}
+model = YOLO('yolov8n-seg.pt')
 
-
+# ----------------------------
+# Predefined Multi-Color Hair Sets
+# ----------------------------
+HAIR_COLOR_SETS = [
+    {
+        "name": "Golden Brown Highlights",
+        "colors": ["#5A3825", "#B19166", "#E6A575"]
+    },
+    {
+        "name": "Autumn Sunset",
+        "colors": ["#6D4C41", "#BF360C", "#FFAB00"]
+    },
+    {
+        "name": "Dark Chocolate and Caramel",
+        "colors": ["#3E2723", "#795548", "#FFD54F"]
+    },
+    {
+        "name": "Beachy Blonde",
+        "colors": ["#F0EAD6", "#D2B48C", "#FFF8E1"]
+    },
+    {
+        "name": "Silver Fox",
+        "colors": ["#4A4A4A", "#A9A9A9", "#E0E0E0"]
+    },
+    {
+        "name": "Burgundy Bliss",
+        "colors": ["#5D1A2A", "#8C2B3F", "#C04D5F"]
+    },
+    {
+        "name": "Ashy Brown",
+        "colors": ["#594D44", "#8C7B6E", "#BFAE9F"]
+    },
+    {
+        "name": "Strawberry Blonde",
+        "colors": ["#A56B46", "#D49A7A", "#F8D6B2"]
+    },
+    {
+        "name": "Jet Black",
+        "colors": ["#0A0A0A", "#1C1C1C", "#2E2E2E"]
+    }
+]
 
 # ----------------------------
 # Helper function: Hex to RGB
@@ -76,53 +60,102 @@ def hex_to_rgb(hex_color):
     return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
 
 # ----------------------------
-# Helper function: Color difference
+# Helper function: Color difference in LAB space
 # ----------------------------
-def color_difference(rgb1, rgb2):
-    return np.sqrt(sum([(c1 - c2) ** 2 for c1, c2 in zip(rgb1, rgb2)]))
+def color_difference_lab(rgb1, rgb2):
+    # Convert RGB to LAB
+    lab1 = cv2.cvtColor(np.uint8([[rgb1]]), cv2.COLOR_RGB2LAB)[0][0]
+    lab2 = cv2.cvtColor(np.uint8([[rgb2]]), cv2.COLOR_RGB2LAB)[0][0]
+    # Calculate Euclidean distance
+    return np.linalg.norm(lab1.astype(float) - lab2.astype(float))
 
 # ----------------------------
-# Helper function: Find closest color
+# Hair Segmentation
 # ----------------------------
-def find_closest_color(detected_rgb, color_map):
-    closest_color_name = None
-    min_difference = float('inf')
+def segment_hair(image: Image.Image) -> np.ndarray:
+    results = model(image)
     
-    for color_name, hex_value in color_map.items():
-        predefined_rgb = hex_to_rgb(hex_value)
-        difference = color_difference(detected_rgb, predefined_rgb)
-        
-        if difference < min_difference:
-            min_difference = difference
-            closest_color_name = color_name
-            
-    max_diff = np.sqrt(3 * (255 ** 2))
-    similarity_percentage = 100 * (1 - min_difference / max_diff)
+    if results[0].masks is None or len(results[0].masks.data) == 0:
+        return None
+
+    masks = results[0].masks.data.cpu().numpy()
+    # Assuming the largest mask is most relevant
+    hair_mask = np.sum(masks, axis=0)
+    hair_mask = np.clip(hair_mask, 0, 1)
     
-    return closest_color_name, similarity_percentage
+    hair_mask = cv2.resize(hair_mask, (image.width, image.height))
+    
+    return hair_mask
 
 # ----------------------------
-# Helper function: Get dominant color from an image
+# Get Dominant Colors from Hair
 # ----------------------------
-def get_dominant_color(image: Image.Image) -> tuple:
-    # Resize for performance
-    image = image.resize((150, 150))
+def get_dominant_colors(image: Image.Image, hair_mask: np.ndarray, n_colors=5) -> list:
     np_image = np.array(image)
-    np_image = np_image.reshape((-1, 3))
+    
+    hair_pixels = np_image[hair_mask > 0.5] # Use a threshold
+    
+    if len(hair_pixels) < n_colors:
+        return []
 
-    # Use KMeans to find dominant colors
-    n_clusters = 5
-    kmeans = KMeans(n_clusters=n_clusters, n_init='auto', random_state=42)
-    kmeans.fit(np_image)
+    kmeans = KMeans(n_clusters=n_colors, n_init='auto', random_state=42)
+    kmeans.fit(hair_pixels)
 
-    # Find the most frequent cluster
+    dominant_colors = kmeans.cluster_centers_.astype(int)
+    
     counts = np.bincount(kmeans.labels_)
-    dominant_cluster = np.argmax(counts)
-    dominant_color = kmeans.cluster_centers_[dominant_cluster].astype(int)
+    sorted_indices = np.argsort(counts)[::-1]
+    
+    dominant_colors = dominant_colors[sorted_indices]
+    
+    hex_colors = [f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}" for rgb in dominant_colors]
+    
+    return hex_colors
 
-    rgb_color = tuple(int(c) for c in dominant_color)
-    hex_color = f"#{rgb_color[0]:02x}{rgb_color[1]:02x}{rgb_color[2]:02x}"
-    return rgb_color, hex_color
+# ----------------------------
+# Find Closest Hair Color Sets
+# ----------------------------
+def find_closest_hair_color_sets(detected_colors: list, color_sets: list, top_n=3) -> list:
+    set_distances = []
+
+    detected_colors_rgb = [hex_to_rgb(c) for c in detected_colors]
+
+    for color_set in color_sets:
+        set_colors_rgb = [hex_to_rgb(c) for c in color_set["colors"]]
+        
+        total_min_distance = 0
+        for detected_color in detected_colors_rgb:
+            min_dist = float('inf')
+            for set_color in set_colors_rgb:
+                dist = color_difference_lab(detected_color, set_color)
+                if dist < min_dist:
+                    min_dist = dist
+            total_min_distance += min_dist
+        
+        avg_distance = total_min_distance / len(detected_colors_rgb)
+        set_distances.append({"set": color_set, "distance": avg_distance})
+
+    # Sort sets by distance
+    sorted_sets = sorted(set_distances, key=lambda x: x['distance'])
+
+    # Prepare the top N results
+    top_matches = []
+    # Max possible distance in LAB space is ~sqrt(100^2 + 2*128^2) but we can normalize differently
+    # A simpler normalization: use the max distance found as the upper bound
+    max_found_distance = sorted_sets[-1]['distance'] if sorted_sets else 1
+
+    for match in sorted_sets[:top_n]:
+        # Normalize similarity based on the range of distances found
+        similarity = 100 * (1 - match['distance'] / (max_found_distance * 1.5)) # Add buffer
+        similarity = max(0, min(similarity, 100)) # Clamp between 0 and 100
+
+        top_matches.append({
+            "set_name": match["set"]["name"],
+            "similarity_percentage": f"{similarity:.2f}%",
+            "matched_colors": match["set"]["colors"]
+        })
+        
+    return top_matches
 
 # ----------------------------
 # Main analysis function
@@ -131,21 +164,19 @@ def analyze_image_color(image_bytes: bytes) -> dict:
     try:
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         
-        # Get the dominant color of the entire image
-        dominant_rgb, dominant_hex = get_dominant_color(image)
-        
-        # Find the closest predefined color
-        closest_color_name, match_percentage = find_closest_color(dominant_rgb, PREDEFINED_COLORS)
-        
-        # Create a result message
-        message = f"The dominant color is {dominant_hex}, which is closest to your predefined color '{closest_color_name}'."
+        hair_mask = segment_hair(image)
+        if hair_mask is None:
+            return {"error": "Could not segment hair from the image."}
+
+        dominant_colors = get_dominant_colors(image, hair_mask, n_colors=5)
+        if not dominant_colors:
+            return {"error": "Could not extract dominant colors from the hair region."}
+
+        closest_sets = find_closest_hair_color_sets(dominant_colors, HAIR_COLOR_SETS, top_n=3)
 
         return {
-            "dominant_color_rgb": dominant_rgb,
-            "dominant_color_hex": dominant_hex,
-            "closest_color": closest_color_name,
-            "match_percentage": f"{match_percentage:.2f}%",
-            "message": message
+            "dominant_hair_colors": dominant_colors,
+            "closest_hair_color_sets": closest_sets
         }
     except Exception as e:
         return {"error": f"Failed to analyze image: {str(e)}"}

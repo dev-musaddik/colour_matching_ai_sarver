@@ -21,7 +21,6 @@ origins = [
     "http://localhost:3000",
     "http://localhost:5173", # Default Vite port
     "http://localhost:5174",
-    "https://hair-color-analyzer-backend.onrender.com/analyze-hair-color",
     "https://hair-color-analyzer-frontend.vercel.app"
     # Add your deployed frontend URL here
     # "https://your-frontend-domain.com" 

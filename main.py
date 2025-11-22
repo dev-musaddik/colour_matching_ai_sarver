@@ -2,7 +2,8 @@ from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from typing import List
-
+import os
+from dotenv import load_dotenv
 # Import the new core functions
 from hair_analyzer import analyze_hair_color_from_image, find_closest_match
 from database import init_db, add_trained_color, get_all_trained_colors, clear_all_data
@@ -14,15 +15,12 @@ async def startup_event():
     """Initializes the database on server startup."""
     await init_db()
 
-# Configure CORS to allow the frontend to communicate with this backend
-origins = [
-   "http://localhost:3000",
-    "http://localhost:5173", # Default Vite port
-    "http://localhost:5174",
-    "https://hair-color-analyzer-frontend.vercel.app"
-    # Add your deployed frontend URL here for production
-]
 
+load_dotenv()
+
+# Read CORS origins from .env
+origins_env = os.getenv("CORS_ORIGINS", "")
+origins = [origin.strip() for origin in origins_env.split(",") if origin.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,

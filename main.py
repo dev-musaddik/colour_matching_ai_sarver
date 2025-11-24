@@ -18,6 +18,8 @@ async def startup_event():
 
 load_dotenv()
 
+
+# Read CORS origins from .env
 # Read CORS origins from .env
 origins_env = os.getenv("CORS_ORIGINS", "")
 origins = [origin.strip() for origin in origins_env.split(",") if origin.strip()]
@@ -28,6 +30,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for Docker and Render monitoring."""
+    return {"status": "healthy", "service": "hair-color-analyzer-backend"}
+
 
 @app.post("/train")
 async def train_new_color(

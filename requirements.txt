@@ -9,7 +9,6 @@ aiosqlite
 ultralytics
 torch
 torchvision
-=======
 # Upgrade pip, setuptools, and wheel first to get prebuilt wheels
 pip>=25.3
 setuptools>=68.0

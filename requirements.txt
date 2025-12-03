@@ -1,15 +1,3 @@
-fastapi
-uvicorn[standard]
-python-multipart
-numpy
-opencv-python-headless
-scikit-learn==1.7.2
-Pillow
-aiosqlite
-ultralytics
-torch
-torchvision
-# Upgrade pip, setuptools, and wheel first to get prebuilt wheels
 pip>=25.3
 setuptools>=68.0
 wheel>=0.40
@@ -62,7 +50,7 @@ pytz==2025.2
 PyYAML==6.0.3
 
 scikit-image==0.24.0
-scikit-learn==1.5.2
+scikit-learn>=1.3.0
 scipy==1.14.1
 
 seaborn==0.13.2

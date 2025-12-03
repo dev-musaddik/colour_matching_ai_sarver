@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 fastapi
 uvicorn[standard]
 python-multipart
@@ -89,4 +88,3 @@ urllib3==2.5.0
 uvicorn==0.38.0
 watchfiles==1.1.1
 websockets==15.0.1
->>>>>>> 8b12e517e59d233e59b153b45223ee89e81a9d2a

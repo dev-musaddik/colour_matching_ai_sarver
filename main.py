@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,19 +31,6 @@ os.makedirs(TRAINING_DATA_DIR, exist_ok=True)
 os.makedirs(MODELS_DIR, exist_ok=True)
 
 app = FastAPI(title="Hair Color Analyzer API")
-=======
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
-from typing import List
-import os
-from dotenv import load_dotenv
-# Import the new core functions
-from hair_analyzer import analyze_hair_color_from_image, find_closest_match
-from database import init_db, add_trained_color, get_all_trained_colors, clear_all_data
-
-app = FastAPI(title="Hair Color Trainer & Analyzer API")
->>>>>>> 8b12e517e59d233e59b153b45223ee89e81a9d2a
 
 # Mount static directory for serving training images
 app.mount(f"/{TRAINING_DATA_DIR}", StaticFiles(directory=TRAINING_DATA_DIR), name="training_data")
@@ -86,7 +72,6 @@ async def get_db():
 
 @app.on_event("startup")
 async def startup_event():
-<<<<<<< HEAD
     await init_cache_db()
     await initialize_database()
     await load_all_models()
@@ -198,7 +183,6 @@ async def create_color(color: ColorCreate, db: aqlite.Connection = Depends(get_d
 async def get_all_colors(db: aqlite.Connection = Depends(get_db)):
     cursor = await db.execute("SELECT id, name, description FROM colors ORDER BY created_at DESC")
     colors = await cursor.fetchall()
-    # Fix: map sqlite3.Row manually to Pydantic model
     return [Color(id=row["id"], name=row["name"], description=row["description"]) for row in colors]
 
 @app.get("/colors/{color_id}", response_model=Color)
@@ -413,7 +397,6 @@ async def analyze_legacy_endpoint(images: List[UploadFile] = File(...)):
     analysis_result = analyze_image_color(image_bytes)
     analysis_result['filename'] = image.filename
     
-    
     if "error" not in analysis_result:
         await cache_result(image_hash, analysis_result)
         analysis_result['cached'] = False
@@ -425,137 +408,8 @@ async def clear_cache_endpoint():
     try:
         await clear_cache()
         return {"message": "Cache cleared successfully", "status": "success"}
-=======
-    """Initializes the database on server startup."""
-    await init_db()
-
-
-load_dotenv()
-
-
-# Read CORS origins from .env
-# Read CORS origins from .env
-origins_env = os.getenv("CORS_ORIGINS", "")
-origins = [origin.strip() for origin in origins_env.split(",") if origin.strip()]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint for Docker and Render monitoring."""
-    return {"status": "healthy", "service": "hair-color-analyzer-backend"}
-
-
-@app.post("/train")
-async def train_new_color(
-    color_name: str = Form(...),
-    images: List[UploadFile] = File(...)
-):
-    """
-    Admin endpoint to upload one or more training images, assign them a name,
-    extract their color signatures, and save them to the database.
-    """
-    if not color_name:
-        raise HTTPException(status_code=400, detail="Color name is required.")
-    if not images:
-        raise HTTPException(status_code=400, detail="At least one image is required.")
-
-    saved_colors = []
-    for image in images:
-        image_bytes = await image.read()
-        
-        analysis = analyze_hair_color_from_image(image_bytes)
-        if "error" in analysis:
-            # Skip this image or raise an error. For now, we'll skip.
-            print(f"Could not analyze {image.filename}: {analysis['error']}")
-            continue
-
-        lab_signature = analysis["lab_signature"]
-        
-        try:
-            await add_trained_color(color_name, lab_signature, image.filename)
-            saved_colors.append(analysis["display_colors"])
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Database error for {image.filename}: {str(e)}")
-
-    if not saved_colors:
-        raise HTTPException(status_code=400, detail="None of the provided images could be processed.")
-
-    return {
-        "message": f"Successfully trained color '{color_name}' with {len(saved_colors)} image(s).",
-        "trained_color_name": color_name,
-        "saved_signatures_count": len(saved_colors)
-    }
-
-
-@app.post("/analyze")
-async def analyze_user_image(images: List[UploadFile] = File(...)):
-    """
-    User endpoint to upload one or more images, extract their color signatures,
-    and find the closest match for each from the trained dataset.
-    """
-    if not images:
-        raise HTTPException(status_code=400, detail="At least one image is required.")
-
-    # Get all trained colors once
-    trained_colors = await get_all_trained_colors()
-    if not trained_colors:
-        raise HTTPException(status_code=404, detail="No colors have been trained in the system yet.")
-
-    results = []
-    for image in images:
-        image_bytes = await image.read()
-
-        # 1. Analyze the user's image
-        user_analysis = analyze_hair_color_from_image(image_bytes)
-        if "error" in user_analysis:
-            results.append({
-                "filename": image.filename,
-                "error": user_analysis["error"]
-            })
-            continue
-
-        user_lab_signature = user_analysis["lab_signature"]
-
-        # 2. Find the best match
-        best_match = find_closest_match(user_lab_signature, trained_colors)
-        if not best_match:
-            results.append({
-                "filename": image.filename,
-                "error": "Could not find a suitable match."
-            })
-            continue
-        
-        results.append({
-            "filename": image.filename,
-            "user_hair_colors": user_analysis["display_colors"],
-            "closest_match": best_match
-        })
-
-    return {"analysis_results": results}
-
-@app.get("/trained-colors")
-async def get_trained_colors():
-    """Endpoint to retrieve all currently trained colors."""
-    colors = await get_all_trained_colors()
-    return {"trained_colors": colors}
-
-
-@app.post("/admin/clear-database")
-async def clear_database():
-    """A simple admin endpoint to clear all data for a fresh start."""
-    try:
-        await clear_all_data()
-        return {"message": "All trained color data has been cleared."}
->>>>>>> 8b12e517e59d233e59b153b45223ee89e81a9d2a
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to clear database: {str(e)}")
-
+        raise HTTPException(status_code=500, detail=f"Failed to clear cache: {str(e)}")
 
 @app.get("/cache/stats")
 async def get_cache_stats():
@@ -569,8 +423,4 @@ async def get_cache_stats():
         return {"cached_results": 0, "error": str(e), "status": "error"}
 
 if __name__ == "__main__":
-<<<<<<< HEAD
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-=======
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
->>>>>>> 8b12e517e59d233e59b153b45223ee89e81a9d2a

@@ -137,10 +137,83 @@ def analyze_hair_color_from_image(image_bytes: bytes) -> Dict:
     if lab_signature is None:
         return {"error": "Could not determine dominant colors from the detected hair."}
 
-    # Make response JSON-safe
     response = {
         "lab_signature": lab_signature,
         "display_colors": display_colors
     }
 
     return to_serializable(response)
+
+
+# Backward compatibility aliases
+def analyze_image_color(image_bytes: bytes) -> Dict:
+    """Legacy function - calls analyze_hair_color_from_image."""
+    result = analyze_hair_color_from_image(image_bytes)
+    if "error" not in result:
+        return {
+            "user_hair_colors": result.get("display_colors", []),
+            "lab_signature": result.get("lab_signature", [])
+        }
+    return result
+
+
+def get_dominant_colors(image: Image.Image, hair_mask: np.ndarray, n_colors: int = 3):
+    """Alias for extract_color_signature - used by training_service."""
+    lab_colors, _ = extract_color_signature(image, hair_mask, n_colors)
+    return lab_colors
+
+
+def color_difference_lab(lab1: np.ndarray, lab2: np.ndarray) -> float:
+    """Calculate color difference using CIEDE2000."""
+    return float(deltaE_ciede2000(lab1, lab2))
+
+
+def estimate_image_properties(lab_colors: List[np.ndarray]) -> Dict[str, Any]:
+    """Estimate hair properties based on LAB color values."""
+    if not lab_colors or len(lab_colors) == 0:
+        return {
+            "estimated_tone": "Unknown",
+            "estimated_level": "Unknown",
+            "estimated_style": "Unknown"
+        }
+    
+    dominant_lab = lab_colors[0]
+    L, a, b = dominant_lab[0], dominant_lab[1], dominant_lab[2]
+    
+    # Estimate level
+    if L > 70:
+        level = "Very Light"
+    elif L > 50:
+        level = "Light"
+    elif L > 30:
+        level = "Medium"
+    else:
+        level = "Dark"
+    
+    # Estimate tone
+    if abs(a) < 5 and abs(b) < 5:
+        tone = "Neutral"
+    elif a > 10:
+        tone = "Warm/Red"
+    elif a < -5:
+        tone = "Cool/Green"
+    elif b > 10:
+        tone = "Golden/Yellow"
+    elif b < -5:
+        tone = "Ash/Blue"
+    else:
+        tone = "Neutral"
+    
+    # Estimate style
+    if L > 60:
+        style = "Blonde"
+    elif L > 40:
+        style = "Brown"
+    else:
+        style = "Black"
+    
+    return {
+        "estimated_tone": tone,
+        "estimated_level": level,
+        "estimated_style": style
+    }

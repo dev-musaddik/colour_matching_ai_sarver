@@ -95,6 +95,7 @@ async def startup_event():
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").split(",")
 
 # Default allowed origins if not set via environment variable
+# Version: 2024-12-04 - CORS fix for Vercel frontend
 DEFAULT_ORIGINS = [
     "http://localhost:5173",  # Local development
     "http://localhost:3000",  # Alternative local port

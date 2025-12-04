@@ -100,6 +100,14 @@ else:
     )
 
 # ----------------------------
+# Health Check Endpoint
+# ----------------------------
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for Render and other monitoring services"""
+    return {"status": "healthy", "service": "Hair Color Analyzer API"}
+
+# ----------------------------
 # Analysis Endpoint
 # ----------------------------
 @app.post("/analyze")

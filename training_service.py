@@ -22,23 +22,43 @@ MODELS_DIR = "color_models"
 os.makedirs(MODELS_DIR, exist_ok=True)
 
 # ----------------------------
-# Model & Preprocessing Setup
+# Model & Preprocessing Setup (Lazy Loading)
 # ----------------------------
-resnet = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
-resnet = torch.nn.Sequential(*(list(resnet.children())[:-1]))
-resnet.eval()
+# Global variables for lazy loading
+_resnet_model = None
+_preprocess = None
 
-preprocess = transforms.Compose([
-    transforms.Resize(256),
-    transforms.CenterCrop(224),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-])
+def get_resnet_model():
+    """Lazy load ResNet50 model only when needed for training."""
+    global _resnet_model
+    if _resnet_model is None:
+        print("Loading ResNet50 model for training...")
+        _resnet_model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
+        _resnet_model = torch.nn.Sequential(*(list(_resnet_model.children())[:-1]))
+        _resnet_model.eval()
+        print("ResNet50 model loaded successfully.")
+    return _resnet_model
+
+def get_preprocess():
+    """Get preprocessing transforms."""
+    global _preprocess
+    if _preprocess is None:
+        _preprocess = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+    return _preprocess
 
 # ----------------------------
 # Feature Extraction
 # ----------------------------
 def get_embedding(image: Image.Image, hair_mask: np.ndarray) -> np.ndarray:
+    """Extract embedding from hair region using ResNet50 (lazy loaded)."""
+    resnet = get_resnet_model()  # Lazy load
+    preprocess = get_preprocess()  # Lazy load
+    
     np_image = np.array(image)
     mask_3d = np.stack([hair_mask]*3, axis=-1)
     masked_image_np = np.where(mask_3d > 0.5, np_image, 0).astype(np.uint8)

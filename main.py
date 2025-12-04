@@ -74,7 +74,19 @@ async def get_db():
 async def startup_event():
     await init_cache_db()
     await initialize_database()
-    await load_all_models()
+    
+    # Only load models if they exist (lazy loading for memory optimization)
+    try:
+        async with aqlite.connect(DB_FILE) as db:
+            cursor = await db.execute("SELECT COUNT(*) FROM color_models")
+            count = (await cursor.fetchone())[0]
+            if count > 0:
+                print(f"Loading {count} trained models...")
+                await load_all_models()
+            else:
+                print("No trained models found. Skipping model loading to save memory.")
+    except Exception as e:
+        print(f"Note: Could not check for models: {e}")
 
 # ----------------------------
 # CORS Configuration

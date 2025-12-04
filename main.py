@@ -91,25 +91,29 @@ async def startup_event():
 # ----------------------------
 # CORS Configuration
 # ----------------------------
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
-if ALLOWED_ORIGINS == ["*"]:
-    # Development mode - allow all
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+# Allow specific origins for production
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").split(",")
+
+# Default allowed origins if not set via environment variable
+DEFAULT_ORIGINS = [
+    "http://localhost:5173",  # Local development
+    "http://localhost:3000",  # Alternative local port
+    "https://hair-color-analyzer-frontend.vercel.app",  # Production frontend
+]
+
+# Use environment variable origins if provided, otherwise use defaults
+if ALLOWED_ORIGINS and ALLOWED_ORIGINS != [""]:
+    origins = ALLOWED_ORIGINS
 else:
-    # Production mode - specific origins
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=ALLOWED_ORIGINS,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    origins = DEFAULT_ORIGINS
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ----------------------------
 # Health Check Endpoint

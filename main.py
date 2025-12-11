@@ -102,7 +102,7 @@ ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").split(",")
 DEFAULT_ORIGINS = [
     "http://localhost:5173",  # Local development
     "http://localhost:3000",  # Alternative local port
-    "https://hair-color-analyzer-frontend.vercel.app",  # Production frontend
+    "https://colour-matching-ai-client.vercel.app",  # Production frontend
 ]
 
 # Use environment variable origins if provided, otherwise use defaults

@@ -11,10 +11,14 @@ import os
 import uuid
 import asyncio
 import json as json_lib
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
 
 # Import business logic
 from hair_analyzer import analyze_image_color
-from cache import init_db as init_cache_db, get_cached_result, cache_result, clear_cache
 from database import initialize_database, DB_FILE
 from training_service import process_image_for_training, train_color_model
 from analysis_service import load_all_models, analyze_image_with_trained_models
@@ -72,7 +76,6 @@ async def get_db():
 
 @app.on_event("startup")
 async def startup_event():
-    await init_cache_db()
     await initialize_database()
     
     # Only load models if they exist (lazy loading for memory optimization)
@@ -129,64 +132,29 @@ async def health_check():
 # ----------------------------
 @app.post("/analyze")
 async def analyze_image_endpoint(images: List[UploadFile] = File(...)):
-    """Analyze 1-5 hair color images individually and return separate results with caching"""
+    """Analyze 1-5 hair color images individually and return separate results (No Caching)"""
     if len(images) < 1:
         raise HTTPException(status_code=400, detail="Please upload at least 1 image.")
     if len(images) > 5:
         raise HTTPException(status_code=400, detail="Maximum 5 images allowed.")
     
-    # Read all images and check cache for each
-    images_data = []
+    # Read all images
+    images_bytes = []
     for image in images:
-        img_bytes = await image.read()
-        img_hash = hashlib.sha256(img_bytes).hexdigest()
-        images_data.append({
-            'bytes': img_bytes,
-            'hash': img_hash,
-            'filename': image.filename
-        })
+        images_bytes.append(await image.read())
     
-    # Check cache for each image and collect results
-    results = []
-    images_to_analyze = []
-    images_to_analyze_indices = []
+    # Analyze all images directly
+    analysis_response = await analyze_image_with_trained_models(images_bytes)
     
-    for idx, img_data in enumerate(images_data):
-        cached_result = await get_cached_result(img_data['hash'])
-        if cached_result:
-            cached_result['cached'] = True
-            cached_result['image_index'] = idx + 1
-            cached_result['filename'] = img_data['filename']
-            results.append(cached_result)
-        else:
-            images_to_analyze.append(img_data['bytes'])
-            images_to_analyze_indices.append(idx)
+    if "error" in analysis_response:
+        raise HTTPException(status_code=400, detail=analysis_response["error"])
     
-    # Analyze uncached images
-    if images_to_analyze:
-        analysis_response = await analyze_image_with_trained_models(images_to_analyze)
-        
-        if "error" in analysis_response:
-            raise HTTPException(status_code=400, detail=analysis_response["error"])
-        
-        # Cache and add new results
-        for i, result in enumerate(analysis_response['results']):
-            original_idx = images_to_analyze_indices[i]
-            result['cached'] = False
-            result['image_index'] = original_idx + 1
-            result['filename'] = images_data[original_idx]['filename']
-            
-            # Cache this individual result
-            await cache_result(images_data[original_idx]['hash'], result)
-            results.append(result)
+    # Add filenames to results for frontend matching
+    for i, result in enumerate(analysis_response['results']):
+        result['filename'] = images[i].filename
+        result['cached'] = False # Explicitly state not cached
     
-    # Sort results by image_index to maintain upload order
-    results.sort(key=lambda x: x['image_index'])
-    
-    return {
-        "num_images": len(results),
-        "results": results
-    }
+    return analysis_response
 
 # ----------------------------
 # Color Management Endpoints
@@ -400,52 +368,6 @@ async def trigger_training_simple(color_id: int, db: aqlite.Connection = Depends
         return {"message": f"Successfully trained model for color_id {color_id}.", "color_id": color_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Training failed: {str(e)}")
-
-# ----------------------------
-# Legacy & Utility Endpoints
-# ----------------------------
-@app.post("/analyze-legacy")
-async def analyze_legacy_endpoint(images: List[UploadFile] = File(...)):
-    if len(images) > 1:
-        raise HTTPException(status_code=400, detail="The legacy endpoint only supports one image at a time now.")
-    
-    image = images[0]
-    image_bytes = await image.read()
-    image_hash = hashlib.sha256(image_bytes).hexdigest()
-
-    cached_result = await get_cached_result(image_hash)
-    if cached_result:
-        cached_result['filename'] = image.filename
-        cached_result['cached'] = True
-        return [cached_result]
-    
-    analysis_result = analyze_image_color(image_bytes)
-    analysis_result['filename'] = image.filename
-    
-    if "error" not in analysis_result:
-        await cache_result(image_hash, analysis_result)
-        analysis_result['cached'] = False
-    
-    return [analysis_result]
-
-@app.post("/clear-cache")
-async def clear_cache_endpoint():
-    try:
-        await clear_cache()
-        return {"message": "Cache cleared successfully", "status": "success"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to clear cache: {str(e)}")
-
-@app.get("/cache/stats")
-async def get_cache_stats():
-    """Get cache statistics"""
-    try:
-        async with aqlite.connect("hair_color_cache.db") as db:
-            cursor = await db.execute("SELECT COUNT(*) FROM image_cache")
-            count = (await cursor.fetchone())[0]
-            return {"cached_results": count, "status": "success"}
-    except Exception as e:
-        return {"cached_results": 0, "error": str(e), "status": "error"}
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

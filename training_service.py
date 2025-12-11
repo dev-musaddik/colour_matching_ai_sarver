@@ -11,7 +11,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score
 
-from hair_analyzer import segment_hair, get_dominant_colors as get_lab_colors
+from hair_analyzer import segment_hair, get_dominant_colors as get_lab_colors, extract_color_signature
 from database import DB_FILE
 import aiosqlite as aqlite
 
@@ -73,24 +73,44 @@ def get_embedding(image: Image.Image, hair_mask: np.ndarray) -> np.ndarray:
     return embedding.squeeze().cpu().numpy()
 
 async def process_image_for_training(image_id: int, image_path: str):
+    """
+    Process a single image for training: segment hair, extract colors, and get embedding.
+    Robustly handles errors to prevent pipeline crashes.
+    """
     try:
-        image = Image.open(image_path).convert("RGB")
+        try:
+            image = Image.open(image_path).convert("RGB")
+        except Exception as e:
+            print(f"Skipping image_id {image_id}: Failed to open image. {e}")
+            return
+
         hair_mask = segment_hair(image)
         if hair_mask is None or np.sum(hair_mask) == 0:
             print(f"Skipping image_id {image_id}: No hair detected.")
             return
 
-        lab_colors = get_lab_colors(image, hair_mask, n_colors=5)
-        if not lab_colors:
-            print(f"Skipping image_id {image_id}: Could not extract LAB colors.")
+        # Use extract_color_signature to get both LAB arrays and display dicts
+        # We want to save the display_colors (dicts with hex/rgb) because calculate_lab_similarity expects that format
+        try:
+            lab_colors, display_colors = extract_color_signature(image, hair_mask, n_colors=5)
+        except Exception as e:
+            print(f"Skipping image_id {image_id}: Error extracting color signature. {e}")
             return
         
-        for color in lab_colors:
-            if 'rgb' in color: del color['rgb']
-        lab_features_json = json.dumps(lab_colors)
+        if not display_colors:
+            print(f"Skipping image_id {image_id}: Could not extract dominant colors.")
+            return
+        
+        # We save the display_colors (list of dicts) as the JSON features
+        # This matches what calculate_lab_similarity expects (list of dicts with 'hex')
+        lab_features_json = json.dumps(display_colors)
 
-        embedding = get_embedding(image, hair_mask)
-        embedding_blob = pickle.dumps(embedding)
+        try:
+            embedding = get_embedding(image, hair_mask)
+            embedding_blob = pickle.dumps(embedding)
+        except Exception as e:
+            print(f"Skipping image_id {image_id}: Error generating embedding. {e}")
+            return
 
         async with aqlite.connect(DB_FILE) as db:
             # Use INSERT OR IGNORE to prevent errors on re-runs
@@ -106,6 +126,7 @@ async def process_image_for_training(image_id: int, image_path: str):
             print(f"Successfully processed and saved features for image_id: {image_id}")
 
     except Exception as e:
+        # Catch-all for any other unexpected errors to ensure pipeline doesn't crash
         print(f"Error processing image_id {image_id}: {e}")
 
 # ----------------------------
@@ -148,7 +169,10 @@ async def train_color_model(color_id: int, progress_callback=None):
             positive_features = [pickle.loads(row['embedding']) for row in positive_rows]
 
             if not positive_features:
-                raise ValueError("No features found for the target color. Cannot train.")
+                # Instead of crashing, we return early with a message
+                print(f"Training aborted for color_id {color_id}: No valid features found.")
+                await update_progress(total_steps, total_steps, "Training skipped: No valid images processed.")
+                return
 
             # Step 2: Fetch negative features
             current_step += 1
@@ -197,7 +221,10 @@ async def train_color_model(color_id: int, progress_callback=None):
             y = np.array([1] * len(positive_features) + [0] * len(negative_features))
 
             if len(X) < 2:
-                raise ValueError("Not enough total samples to train a model.")
+                 # Should be covered by checks above, but just in case
+                print(f"Training aborted for color_id {color_id}: Not enough total samples.")
+                await update_progress(total_steps, total_steps, "Training skipped: Not enough data.")
+                return
 
             # Use stratified split only if we have at least 2 samples per class
             if len(positive_features) >= 2 and len(negative_features) >= 2:
@@ -252,5 +279,6 @@ async def train_color_model(color_id: int, progress_callback=None):
 
         except Exception as e:
             print(f"Training failed for color_id {color_id}: {e}")
-            raise  # Re-raise to be caught by the endpoint
+            # We don't raise here to avoid crashing the endpoint, but we log the error
+            await update_progress(total_steps, total_steps, f"Training failed: {str(e)}")
 

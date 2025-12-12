@@ -132,8 +132,13 @@ async def analyze_single_image(image_bytes: bytes):
                 print(f"DEBUG: Model {model_data['name']} (Embedding): Score={prob:.4f}")
             else:
                 # Standard SVM model
-                prob = model.predict_proba([embedding])[0][1]
-                print(f"DEBUG: Model {model_data['name']} (SVM): Score={prob:.4f}")
+                try:
+                    prob = model.predict_proba([embedding])[0][1]
+                    print(f"DEBUG: Model {model_data['name']} (SVM): Score={prob:.4f}")
+                except ValueError as ve:
+                    # Catch dimension mismatch (e.g. 1024 vs 2048)
+                    print(f"WARNING: Model {model_data['name']} is incompatible (needs retraining). Error: {ve}")
+                    continue
             
             svm_results.append({
                 "color_id": color_id,

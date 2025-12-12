@@ -37,7 +37,9 @@ os.makedirs(MODELS_DIR, exist_ok=True)
 app = FastAPI(title="Hair Color Analyzer API")
 
 # Mount static directory for serving training images
-app.mount(f"/{TRAINING_DATA_DIR}", StaticFiles(directory=TRAINING_DATA_DIR), name="training_data")
+# Use absolute path for robustness
+abs_training_data_dir = os.path.abspath(TRAINING_DATA_DIR)
+app.mount(f"/{TRAINING_DATA_DIR}", StaticFiles(directory=abs_training_data_dir), name="training_data")
 
 # ----------------------------
 # Pydantic Models
@@ -236,7 +238,9 @@ async def upload_training_image(color_id: int, image: UploadFile = File(...), db
         )
         await db.commit()
         image_id = cursor.lastrowid
-        return TrainingImage(id=image_id, image_path=file_path, is_processed=False)
+        # Normalize path for response: ensure forward slashes and leading slash
+        normalized_path = "/" + file_path.replace("\\", "/")
+        return TrainingImage(id=image_id, image_path=normalized_path, is_processed=False)
     except aqlite.IntegrityError:
         raise HTTPException(status_code=400, detail="Image path already exists.")
 
@@ -248,7 +252,22 @@ async def get_training_images_for_color(color_id: int, db: aqlite.Connection = D
         (color_id,)
     )
     images = await cursor.fetchall()
-    return [TrainingImage(id=row["id"], image_path=row["image_path"], is_processed=row["is_processed"]) for row in images]
+    
+    results = []
+    for row in images:
+        # Normalize path: ensure forward slashes and leading slash
+        # raw path: "training_data\14\img.png" -> "training_data/14/img.png"
+        normalized_path = row["image_path"].replace("\\", "/")
+        if not normalized_path.startswith("/"):
+            normalized_path = "/" + normalized_path
+            
+        results.append(TrainingImage(
+            id=row["id"], 
+            image_path=normalized_path, 
+            is_processed=row["is_processed"]
+        ))
+        
+    return results
 
 async def process_and_train(color_id: int, progress_queue: asyncio.Queue):
     """Process images and train model with progress updates sent to queue"""

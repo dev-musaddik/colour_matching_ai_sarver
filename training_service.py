@@ -1,6 +1,7 @@
-import torch
-import torchvision.models as models
-import torchvision.transforms as transforms
+import requests
+import mediapipe as mp
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
 from PIL import Image
 import numpy as np
 import cv2
@@ -21,56 +22,59 @@ import aiosqlite as aqlite
 MODELS_DIR = "color_models"
 os.makedirs(MODELS_DIR, exist_ok=True)
 
+# MediaPipe Model for Embeddings
+MP_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/image_embedder/mobilenet_v3_small/float32/1/mobilenet_v3_small.tflite"
+MP_MODEL_PATH = "mobilenet_v3_small.tflite"
+
 # ----------------------------
 # Model & Preprocessing Setup (Lazy Loading)
 # ----------------------------
-# Global variables for lazy loading
-_resnet_model = None
-_preprocess = None
+_embedder = None
 
-def get_resnet_model():
-    """Lazy load ResNet50 model only when needed for training."""
-    global _resnet_model
-    if _resnet_model is None:
-        print("Loading ResNet50 model for training...")
-        _resnet_model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
-        _resnet_model = torch.nn.Sequential(*(list(_resnet_model.children())[:-1]))
-        _resnet_model.eval()
-        print("ResNet50 model loaded successfully.")
-    return _resnet_model
+def get_embedder():
+    """Lazy load MediaPipe Image Embedder."""
+    global _embedder
+    if _embedder is None:
+        # Download model if not exists
+        if not os.path.exists(MP_MODEL_PATH):
+            print(f"Downloading MediaPipe model from {MP_MODEL_URL}...")
+            response = requests.get(MP_MODEL_URL)
+            with open(MP_MODEL_PATH, "wb") as f:
+                f.write(response.content)
+            print("Model downloaded.")
 
-def get_preprocess():
-    """Get preprocessing transforms."""
-    global _preprocess
-    if _preprocess is None:
-        _preprocess = transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ])
-    return _preprocess
+        # Use model_asset_buffer to avoid path issues on Windows/Render
+        with open(MP_MODEL_PATH, "rb") as f:
+            model_content = f.read()
+        
+        base_options = python.BaseOptions(model_asset_buffer=model_content)
+        options = vision.ImageEmbedderOptions(
+            base_options=base_options, l2_normalize=True, quantize=False
+        )
+        _embedder = vision.ImageEmbedder.create_from_options(options)
+        print("MediaPipe Image Embedder loaded.")
+    return _embedder
 
 # ----------------------------
 # Feature Extraction
 # ----------------------------
 def get_embedding(image: Image.Image, hair_mask: np.ndarray) -> np.ndarray:
-    """Extract embedding from hair region using ResNet50 (lazy loaded)."""
-    resnet = get_resnet_model()  # Lazy load
-    preprocess = get_preprocess()  # Lazy load
+    """Extract embedding from hair region using MediaPipe Image Embedder."""
+    embedder = get_embedder()
     
+    # Apply mask to image (black out background)
     np_image = np.array(image)
     mask_3d = np.stack([hair_mask]*3, axis=-1)
     masked_image_np = np.where(mask_3d > 0.5, np_image, 0).astype(np.uint8)
-    masked_image = Image.fromarray(masked_image_np)
-
-    input_tensor = preprocess(masked_image)
-    input_batch = input_tensor.unsqueeze(0)
-
-    with torch.no_grad():
-        embedding = resnet(input_batch)
     
-    return embedding.squeeze().cpu().numpy()
+    # Convert to MediaPipe Image
+    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=masked_image_np)
+    
+    # Get embedding
+    embedding_result = embedder.embed(mp_image)
+    
+    # Return the first embedding vector as numpy array
+    return embedding_result.embeddings[0].embedding
 
 async def process_image_for_training(image_id: int, image_path: str):
     """
@@ -167,10 +171,12 @@ async def train_color_model(color_id: int, progress_callback=None):
             """, (color_id,))
             positive_rows = await cursor.fetchall()
             positive_features = [pickle.loads(row['embedding']) for row in positive_rows]
+            # Filter out old features (ResNet was 2048, MediaPipe is 1024)
+            positive_features = [f for f in positive_features if len(f) == 1024]
 
             if not positive_features:
                 # Instead of crashing, we return early with a message
-                print(f"Training aborted for color_id {color_id}: No valid features found.")
+                print(f"Training aborted for color_id {color_id}: No valid features found (needs 1024 dims).")
                 await update_progress(total_steps, total_steps, "Training skipped: No valid images processed.")
                 return
 
@@ -185,6 +191,8 @@ async def train_color_model(color_id: int, progress_callback=None):
             """, (color_id,))
             negative_rows = await cursor.fetchall()
             negative_features = [pickle.loads(row['embedding']) for row in negative_rows]
+            # Filter out old features
+            negative_features = [f for f in negative_features if len(f) == 1024]
 
             if not negative_features:
                 current_step += 1

@@ -14,33 +14,39 @@ import cv2
 # -----------------------------
 mp_selfie_segmentation = mp.solutions.selfie_segmentation
 
+# Global segmenter instance
+_segmenter = None
+
+def get_segmenter():
+    """Lazy load MediaPipe Selfie Segmentation."""
+    global _segmenter
+    if _segmenter is None:
+        _segmenter = mp_selfie_segmentation.SelfieSegmentation(model_selection=1)
+    return _segmenter
+
 def segment_hair(image: Image.Image) -> np.ndarray:
     """
     Segments hair/person from an image using MediaPipe Selfie Segmentation.
     Returns a binary mask (1 for hair/person, 0 for background).
-    
-    Note: MediaPipe Selfie Segmentation segments the *person*, not just hair.
-    However, for hair color analysis, the dominant colors in the person mask 
-    (excluding skin tones via color logic if needed, but usually hair is dominant enough)
-    works well as a lightweight proxy.
     """
     # Convert PIL Image to NumPy array (RGB)
     image_np = np.array(image)
 
-    # Initialize MediaPipe Selfie Segmentation
-    with mp_selfie_segmentation.SelfieSegmentation(model_selection=1) as selfie_segmentation:
-        # Process the image
-        results = selfie_segmentation.process(image_np)
-        
-        if results.segmentation_mask is None:
-            return None
+    # Use global segmenter
+    segmenter = get_segmenter()
+    
+    # Process the image
+    results = segmenter.process(image_np)
+    
+    if results.segmentation_mask is None:
+        return None
 
-        # The mask is a float array [0, 1]. We threshold it.
-        # > 0.5 is considered person/hair
-        mask = results.segmentation_mask
-        binary_mask = (mask > 0.5).astype(np.uint8)
-        
-        return binary_mask
+    # The mask is a float array [0, 1]. We threshold it.
+    # > 0.5 is considered person/hair
+    mask = results.segmentation_mask
+    binary_mask = (mask > 0.5).astype(np.uint8)
+    
+    return binary_mask
 
 
 def extract_color_signature(image: Image.Image, hair_mask: np.ndarray, n_colors=3) -> Tuple[List[np.ndarray], List[Dict[str, Any]]]:

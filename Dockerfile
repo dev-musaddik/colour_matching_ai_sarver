@@ -46,18 +46,11 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # Copy application code
 COPY . .
 
-# Pre-download models during build to avoid runtime downloads
-# This reduces startup memory and prevents timeouts
-RUN python -c "from ultralytics import YOLO; YOLO('yolov8n-seg.pt')" && \
-    python -c "import torch; import torchvision.models as models; models.resnet50(weights=models.ResNet50_Weights.DEFAULT)" && \
-    echo "Models pre-downloaded successfully"
-
 # Create non-root user
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
 # Set environment variables for memory optimization
-ENV PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:32
 ENV OMP_NUM_THREADS=1
 ENV MKL_NUM_THREADS=1
 ENV NUMEXPR_NUM_THREADS=1

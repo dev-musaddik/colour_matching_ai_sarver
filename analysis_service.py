@@ -41,6 +41,14 @@ async def load_all_models():
                     }
         print(f"Loaded {len(loaded_models)} models.")
 
+def remove_model_from_cache(color_id: int):
+    """
+    Removes a specific model from the in-memory cache.
+    """
+    if color_id in loaded_models:
+        del loaded_models[color_id]
+        print(f"Removed model {color_id} from cache.")
+
 def calculate_lab_similarity(detected_lab_colors, reference_lab_features_json_list):
     """
     Calculates a similarity score based on LAB color differences (DeltaE).

@@ -21,7 +21,7 @@ load_dotenv()
 from hair_analyzer import analyze_image_color
 from database import initialize_database, DB_FILE
 from training_service import process_image_for_training, train_color_model
-from analysis_service import load_all_models, analyze_image_with_trained_models
+from analysis_service import load_all_models, analyze_image_with_trained_models, remove_model_from_cache
 
 # ----------------------------
 # Constants
@@ -208,6 +208,9 @@ async def delete_color(color_id: int, db: aqlite.Connection = Depends(get_db)):
     color_dir = os.path.join(TRAINING_DATA_DIR, str(color_id))
     if os.path.exists(color_dir) and not os.listdir(color_dir):
         os.rmdir(color_dir)
+
+    # Remove from in-memory cache immediately
+    remove_model_from_cache(color_id)
 
     return None
 

@@ -127,6 +127,7 @@ async def analyze_single_image(image_bytes: bytes):
         # 2. Run inference with all loaded models
         svm_results = []
         print(f"DEBUG: Analyzing image with {len(loaded_models)} models.")
+        print(f"DEBUG: Available models in cache: {[m['name'] for m in loaded_models.values()]}")
         for color_id, model_data in loaded_models.items():
             model = model_data['model']
             

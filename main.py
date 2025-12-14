@@ -190,6 +190,7 @@ async def get_color(color_id: int, db: aqlite.Connection = Depends(get_db)):
 
 @app.delete("/colors/{color_id}", status_code=204)
 async def delete_color(color_id: int, db: aqlite.Connection = Depends(get_db)):
+    print(f"DEBUG: Received request to delete color_id: {color_id}")
     cursor = await db.execute("SELECT image_path FROM training_images WHERE color_id = ?", (color_id,))
     images_to_delete = await cursor.fetchall()
     
